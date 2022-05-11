@@ -1,90 +1,128 @@
 import csv
 import sys, getopt
 
-def main(argv):
 
+def main(argv):
+      
     #Read argv for csv file locate.
     inputfile = ''
+    mapfile = ''
+    
     try:
-        opts, args = getopt.getopt(argv,"hi:",["ifile="])
+        opts, args = getopt.getopt(argv,"hi:m:",["ifile=","map="]) 
     except getopt.GetoptError:
-        print 'SPI_decode.py -i <inputfile>'
-        sys.exit(2)
+        print 'SPI_decode.py -i <inputfile> -m <mapfile>'
+        sys.exit(2)   
     for opt, arg in opts:
+    
+        #Help
         if opt == '-h':
-            print 'test.py -i <inputfile>'
+            print 'SPI_decode.py -i <inputfile> -m <mapfile>'
             sys.exit()
+            
+        #Input file
         elif opt in ("-i", "--ifile"):
             inputfile = arg
+            
+        #Map file
+        elif opt in ("-m", "--ifile"):
+            mapfile = arg
     
-    #Confirm file is name is already found.
+    #Confirm file is already found.
     if inputfile == '':
-        print 'SPI_decode.py -i <inputfile>'
+        print 'SPI_decode.py -i <inputfile> -m <mapfile>'
         sys.exit(2)
+    
+    #Confirm map is already found.
+    if mapfile == '':
+        print 'SPI_decode.py -i <inputfile> -m <mapfile>'
+        sys.exit(2)
+    
+    #Read Intel BIOS build map
+    path = mapfile
+    StartRead = 0
+    MEMap = []
+    with open(path) as f:
+        for line in f.readlines():
         
+            #Split data in the map
+            s = line.split('     ')
+            
+            #Remove space in the map
+            for i in s:
+                if '' in s:
+                    s.remove('')
+            
+            #Start read from Descriptor Region
+            if s[0] == "00000000" and s[1] == "  00000FFF":
+                StartRead = 1
+                s[3] = s[3].lstrip()
+                s[3] = s[3].replace("\n","")
+                MEMap.append([s[3],s[0]])
+            
+            #Do not read reiong that it is in the Descriptor Region
+            if StartRead == 1 and s[1] > "  00000FFF":
+                s[3] = s[3].lstrip()
+                s[3] = s[3].replace("\n","")
+                MEMap.append([s[3],s[0]])
+    
     #Decode SPI date    
     with open(inputfile) as csvfile:
+    
+        #Start search from last region
+        MEMap.reverse()  
+        
+        #Init variable
         decodeList = []
+        PreDisplayRegion = ""
+
+        #Read LA csv data
         rows = csv.reader(csvfile)
-        pre = ""
+      
         for row in rows:
+
+            #SPI Read data command is "0B"
             if row[1] == "=\"SDO\"" and row[2] == "=\"0B\"":
+            
+                #Remove not use character
+                row[3] = row[3].replace("=","")
+                row[3] = row[3].replace("\"","")
                 row[4] = row[4].replace("=","")
                 row[4] = row[4].replace("\"","")
                 row[5] = row[5].replace("=","")
                 row[5] = row[5].replace("\"","")
-                region = int((row[4] + row[5]),16)
-                if region >= 0 and region < 1040 and pre != "Descriptor Region":
-                    pre = "Descriptor Region"
-                    decodeList.append("Descriptor Region\n")
-                    #print("Descriptor Region")
-                elif region >= 1040 and region < 1056 and pre != "ME Region":
-                    pre = "ME Region"
-                    decodeList.append("ME Region\n")
-                    #print("ME Region")
-                elif region >= 1056 and region < 1072 and pre != "FPT":
-                    pre = "FPT"
-                    decodeList.append("FPT\n")
-                    #print("FPT")
-                elif region >= 1072 and region < 1088 and pre != "FPTB":
-                    pre = "FPTB"
-                    decodeList.append("FPTB\n")
-                    #print("FPTB")
-                elif region >= 1088 and region < 1600 and pre != "MFSB":
-                    pre = "MFSB"
-                    decodeList.append("MFSB\n")
-                    #print("MFSB")
-                elif region >= 1600 and region < 3200 and pre != "MFS":
-                    pre = "MFS"
-                    decodeList.append("MFS\n")
-                    #print("MFS")
-                elif region >= 3200 and region < 3376 and pre != "Reserved":
-                    pre = "Reserved"
-                    decodeList.append("Reserved\n")
-                    #print("Reserved")
-                elif region >= 3376 and region < 3408 and pre != "UTOK":
-                    pre = "UTOK"
-                    decodeList.append("UTOK\n")
-                    #print("UTOK")
-                elif region >= 3408 and region < 3440 and pre != "UEP":
-                    pre = "UEP"
-                    decodeList.append("UEP\n")
-                    #print("UEP")
-                elif region >= 3440 and region < 6224 and pre != "SPS Recovery":
-                    pre = "SPS Recovery"
-                    decodeList.append("SPS Recovery\n")
-                    #print("SPS Recovery")
-                elif region >= 6224 and pre != "SPS Operational":
-                    pre = "SPS Operational"
-                    decodeList.append("SPS Operational\n")
-                    #print("SPS Operational")
+                row[6] = row[6].replace("=","")
+                row[6] = row[6].replace("\"","")
+                
+                #Convert region number to decimal
+                region = int((row[3] + row[4] + row[5] + row[6]),16)
+                
+                #Search the region wtih the map
+                for i in MEMap:
+                
+                    #Convert map address to decimal
+                    RegionNum = int(i[1],16)  
+                    RegionName = i[0]     
+                    
+                    #Scan region from the map
+                    if region >= RegionNum:
+                    
+                        #Break if region is same as previous region.
+                        if RegionName != PreDisplayRegion:
+                            PreDisplayRegion = RegionName
+                            decodeList.append(RegionName + "\n")
+                            print(RegionName)
+                            break
+                        else:
+                            break                   
+                        
         
-        path = 'output.txt'
-        f = open(path, 'w')
-        f.writelines(decodeList)
-        f.close
-        print("Decoding complete.\nResult is saved in output.txt")
-
+    #Save result to tge file
+    path = 'output.txt'
+    f = open(path, 'w')
+    f.writelines(decodeList)
+    f.close
+    print("\n\nDecoding complete.\nResult is saved in output.txt")    
 
 if __name__ == "__main__":
    main(sys.argv[1:])           
